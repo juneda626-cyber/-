@@ -99,9 +99,10 @@ def _contexts(root: ET.Element) -> dict[str, dict]:
 
 def parse_xbrl(archive: bytes, doc: dict, acquired_at: str) -> tuple[dict, list[dict]]:
     with zipfile.ZipFile(io.BytesIO(archive)) as zf:
-        names = [n for n in zf.namelist() if n.lower().endswith(".xbrl")]
+        names = [n for n in zf.namelist()
+                 if n.lower().endswith(".xbrl") and "PublicDoc" in Path(n).parts]
         if not names:
-            raise ValueError("取得ZIPにXBRLインスタンスがありません。")
+            raise ValueError("取得ZIPのXBRL/PublicDocに本体XBRLがありません。")
         root = ET.fromstring(zf.read(sorted(names)[0]))
     contexts = _contexts(root)
     source_url = f"{BASE_URL}/documents/{doc['docID']}?type=1"

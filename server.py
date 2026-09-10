@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -46,9 +46,14 @@ def _real_signals(path: Path = DB_PATH) -> list[dict]:
         exists = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='edinet_filings'").fetchone()
         if not exists:
             return []
-        filings = db.execute("SELECT * FROM edinet_filings ORDER BY submitted_at DESC").fetchall()
+        filings = db.execute("SELECT * FROM edinet_filings ORDER BY submitted_at DESC, doc_id DESC").fetchall()
         output = []
+        seen_companies = set()
         for filing in filings:
+            company_key = filing["edinet_code"] or filing["security_code"]
+            if company_key in seen_companies:
+                continue
+            seen_companies.add(company_key)
             rows = db.execute("SELECT * FROM financial_observations WHERE doc_id=? ORDER BY period_end DESC", (filing["doc_id"],)).fetchall()
             preferred = [r for r in rows if r["scope"] == "consolidated"] or rows
             by_metric = {}
@@ -64,20 +69,26 @@ def _real_signals(path: Path = DB_PATH) -> list[dict]:
                     if key not in seen:
                         seen.add(key); values.append(row)
                 return values
-            cash, operating = latest("cash"), distinct_periods("operating_cf")
-            equity, assets = distinct_periods("equity"), distinct_periods("assets")
+            cash = next((row for row in by_metric.get("cash", [])
+                         if row["period_end"] == filing["period_end"]), None)
+            operating = distinct_periods("operating_cf")
             current_cf = operating[0] if operating else None
-            prior_cf = operating[1] if len(operating) > 1 else None
+            prior_cf = next((row for row in operating[1:] if _is_prior_period(current_cf, row)), None)
             cf_change = ((current_cf["value"] - prior_cf["value"]) / abs(prior_cf["value"]) * 100
                          if current_cf and prior_cf and prior_cf["value"] else None)
-            burn = max(0.0, -current_cf["value"] / 12) if current_cf else None
+            duration_months = _period_months(current_cf["period_start"], current_cf["period_end"]) if current_cf else None
+            burn = max(0.0, -current_cf["value"] / duration_months) if current_cf and duration_months else None
             runway = cash["value"] / burn if cash and burn else None
-            equity_ratio = equity[0]["value"] / assets[0]["value"] * 100 if equity and assets and assets[0]["value"] else None
-            prior_equity_ratio = (equity[1]["value"] / assets[1]["value"] * 100
-                                  if len(equity) > 1 and len(assets) > 1 and assets[1]["value"] else None)
+            ratio_pairs = _paired_ratios(by_metric.get("equity", []), by_metric.get("assets", []))
+            current_pair = next((pair for pair in ratio_pairs if pair["period_end"] == filing["period_end"]), None)
+            prior_pairs = [pair for pair in ratio_pairs
+                           if current_pair and (pair["period_end"] or "") < (current_pair["period_end"] or "")]
+            equity_ratio = current_pair["ratio"] if current_pair else None
+            prior_equity_ratio = prior_pairs[0]["ratio"] if prior_pairs else None
             debt_parts = [latest(x) for x in ("short_term_loans", "current_long_term_loans", "long_term_loans", "bonds")]
             debt = sum(x["value"] for x in debt_parts if x) if any(debt_parts) else None
             points, reasons, missing = 0, [], []
+            if current_cf and not duration_months: missing.append("営業CFの対象期間")
             if runway is None: missing.append("現預金ランウェイ")
             elif runway < 6: points += 60; reasons.append("現預金ランウェイが6か月未満")
             elif runway < 12: points += 35; reasons.append("現預金ランウェイが12か月未満")
@@ -86,7 +97,9 @@ def _real_signals(path: Path = DB_PATH) -> list[dict]:
             if equity_ratio is None or prior_equity_ratio is None: missing.append("自己資本比率前年比")
             elif equity_ratio < prior_equity_ratio: points += 15; reasons.append("自己資本比率が前期比で低下")
             status = "undetermined" if missing else ("high" if points >= 60 else "mid" if points >= 35 else "low")
-            source_rows = [x for x in [cash, current_cf, prior_cf, *(equity[:2]), *(assets[:2]), *debt_parts] if x]
+            selected_pairs = [pair for pair in [current_pair, prior_pairs[0] if prior_pairs else None] if pair]
+            ratio_rows = [row for pair in selected_pairs for row in (pair["equity"], pair["assets"])]
+            source_rows = [x for x in [cash, current_cf, prior_cf, *ratio_rows, *debt_parts] if x]
             output.append({"code": filing["security_code"], "name": filing["company_name"], "market": "EDINET",
               "business": "EDINET提出書類から取得", "filing_date": filing["period_end"], "doc_id": filing["doc_id"],
               "data_kind": "actual", "analysis_status": status, "urgency": status, "score": None if missing else points,
@@ -99,6 +112,59 @@ def _real_signals(path: Path = DB_PATH) -> list[dict]:
               "reasons": reasons, "missing": missing,
               "sources": [{k: r[k] for k in ("metric", "value", "unit", "period_start", "period_end", "scope", "concept", "source_url", "acquired_at")} | {"doc_id": filing["doc_id"]} for r in source_rows]})
         return output
+
+
+def _period_months(start_text: str | None, end_text: str | None) -> float | None:
+    """Return the filing period in months, respecting quarter/half/full-year durations."""
+    if not start_text or not end_text:
+        return None
+    try:
+        start, end = date.fromisoformat(start_text), date.fromisoformat(end_text)
+    except ValueError:
+        return None
+    if end < start:
+        return None
+    exclusive_end = end + timedelta(days=1)
+    calendar_months = (exclusive_end.year - start.year) * 12 + exclusive_end.month - start.month
+    if exclusive_end.day == start.day and calendar_months > 0:
+        return float(calendar_months)
+    approximate = (end - start).days + 1
+    months = approximate / (365.2425 / 12)
+    return round(months, 2) if months > 0 else None
+
+
+def _is_prior_period(current: sqlite3.Row | None, candidate: sqlite3.Row) -> bool:
+    if not current:
+        return False
+    current_months = _period_months(current["period_start"], current["period_end"])
+    candidate_months = _period_months(candidate["period_start"], candidate["period_end"])
+    try:
+        current_end = date.fromisoformat(current["period_end"])
+        candidate_end = date.fromisoformat(candidate["period_end"])
+    except (TypeError, ValueError):
+        return False
+    return (current_months == candidate_months
+            and candidate_end.year == current_end.year - 1
+            and (candidate_end.month, candidate_end.day) == (current_end.month, current_end.day))
+
+
+def _paired_ratios(equity_rows: list[sqlite3.Row], asset_rows: list[sqlite3.Row]) -> list[dict]:
+    """Pair equity/assets only where period and consolidation scope are identical."""
+    def keyed(rows):
+        result = {}
+        for row in rows:
+            key = (row["period_start"], row["period_end"], row["scope"])
+            result.setdefault(key, row)
+        return result
+    equities, assets = keyed(equity_rows), keyed(asset_rows)
+    pairs = []
+    for key in sorted(equities.keys() & assets.keys(), key=lambda item: item[1] or "", reverse=True):
+        equity, asset = equities[key], assets[key]
+        if asset["value"]:
+            pairs.append({"period_start": key[0], "period_end": key[1], "scope": key[2],
+                          "ratio": equity["value"] / asset["value"] * 100,
+                          "equity": equity, "assets": asset})
+    return pairs
 
 
 def score(row: sqlite3.Row) -> dict:
