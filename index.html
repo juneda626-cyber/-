@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="上場企業・非上場企業・投資家をつなぐインテリジェンスプラットフォーム" />
+    <title>FLUXIA — Capital Intelligence</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="メインナビゲーション">
+        <a href="#" class="brand" aria-label="FLUXIA ホーム">
+          <span class="brand-mark"><i></i><i></i><i></i></span>
+          <span>FLUXIA</span>
+        </a>
+
+        <nav class="nav-menu">
+          <p class="nav-label">OVERVIEW</p>
+          <a class="nav-item active" href="#dashboard" data-view="dashboard"><span class="icon">⌂</span>ダッシュボード</a>
+          <a class="nav-item" href="#signals" data-view="signals"><span class="icon">⌁</span>資金需要シグナル<span class="nav-badge">12</span></a>
+          <a class="nav-item" href="#companies" data-view="companies"><span class="icon">▦</span>企業データベース</a>
+
+          <p class="nav-label">INTELLIGENCE</p>
+          <a class="nav-item" href="#ma" data-view="ma"><span class="icon">⇄</span>M&amp;A・投資動向</a>
+          <a class="nav-item" href="#matching" data-view="matching"><span class="icon">◇</span>マッチング<span class="dot"></span></a>
+          <a class="nav-item" href="#reports" data-view="reports"><span class="icon">▤</span>レポート</a>
+
+          <p class="nav-label">WORKSPACE</p>
+          <a class="nav-item" href="#watchlist" data-view="watchlist"><span class="icon">☆</span>ウォッチリスト<span class="nav-count">8</span></a>
+          <a class="nav-item" href="#alerts" data-view="alerts"><span class="icon">♧</span>アラート設定</a>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="help-card">
+            <span class="help-icon">?</span>
+            <div><strong>リサーチサポート</strong><small>専門チームに相談する</small></div>
+            <span>↗</span>
+          </div>
+          <div class="user-card">
+            <div class="avatar">KI</div>
+            <div><strong>井上 健太</strong><small>Investment Team</small></div>
+            <button aria-label="ユーザーメニュー">•••</button>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <button class="menu-toggle" aria-label="メニューを開く">☰</button>
+          <div class="global-search">
+            <span>⌕</span>
+            <input id="globalSearch" type="search" placeholder="企業名、証券コード、キーワードで検索" />
+            <kbd>⌘ K</kbd>
+          </div>
+          <div class="top-actions">
+            <span class="data-status"><i></i>API CONNECTING</span>
+            <button class="icon-button" aria-label="通知"><span>♧</span><i class="notification-dot"></i></button>
+            <button class="primary-button" id="newScreening"><span>＋</span>スクリーニング</button>
+          </div>
+        </header>
+
+        <section class="page" id="dashboard">
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">MARKET INTELLIGENCE</p>
+              <h1>おはようございます、井上さん</h1>
+              <p>市場の変化と新しいビジネス機会を、ひとつの画面から。</p>
+            </div>
+            <div class="updated"><span>最終更新</span><strong>2026.09.08&nbsp; 08:42</strong><button id="refreshButton" aria-label="データを更新">↻</button></div>
+          </div>
+
+          <div class="kpi-grid">
+            <article class="kpi-card accent-red">
+              <div class="kpi-top"><span class="kpi-icon">⌁</span><span class="trend danger">＋3 今週</span></div>
+              <p>資金需要シグナル</p><div class="kpi-value">12<small>社</small></div>
+              <div class="kpi-footer"><span>緊急度 高</span><strong>4社</strong><span class="mini-bars red"><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+            </article>
+            <article class="kpi-card accent-violet">
+              <div class="kpi-top"><span class="kpi-icon">⇄</span><span class="trend good">＋18.2%</span></div>
+              <p>M&amp;A・投資シグナル</p><div class="kpi-value">38<small>件</small></div>
+              <div class="kpi-footer"><span>直近30日</span><strong>新規 7件</strong><span class="mini-bars violet"><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+            </article>
+            <article class="kpi-card accent-blue">
+              <div class="kpi-top"><span class="kpi-icon">◇</span><span class="trend neutral">更新 5件</span></div>
+              <p>マッチング候補</p><div class="kpi-value">24<small>組</small></div>
+              <div class="kpi-footer"><span>適合度 80%以上</span><strong>9組</strong><span class="mini-bars blue"><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+            </article>
+            <article class="kpi-card accent-green">
+              <div class="kpi-top"><span class="kpi-icon">◎</span><span class="trend good">＋2 今月</span></div>
+              <p>IPO準備企業</p><div class="kpi-value">16<small>社</small></div>
+              <div class="kpi-footer"><span>事業シナジー候補</span><strong>6社</strong><span class="mini-bars green"><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+            </article>
+          </div>
+
+          <div class="content-grid">
+            <section class="panel signal-panel">
+              <div class="panel-header">
+                <div><div class="title-row"><h2>資金需要シグナル</h2><span class="live-pill">LIVE</span></div><p>財務データから増資可能性の高い企業を検知</p></div>
+                <button class="text-button" data-view-link="signals">すべて見る <span>→</span></button>
+              </div>
+              <div class="filter-row" role="group" aria-label="緊急度フィルター">
+                <button class="filter active" data-filter="all">すべて <span>12</span></button>
+                <button class="filter" data-filter="high"><i class="severity high"></i>緊急度 高 <span>4</span></button>
+                <button class="filter" data-filter="mid"><i class="severity mid"></i>中 <span>5</span></button>
+                <button class="filter" data-filter="low"><i class="severity low"></i>低 <span>3</span></button>
+                <button class="filter" data-filter="undetermined">判定不可</button>
+              </div>
+              <div class="company-list" id="companyList"></div>
+            </section>
+
+            <aside class="panel activity-panel">
+              <div class="panel-header"><div><h2>マーケット動向</h2><p>注目すべき企業アクション</p></div><button class="more-button" aria-label="その他">•••</button></div>
+              <div class="activity-list" id="activityList"></div>
+              <button class="activity-more">すべての動向を見る <span>→</span></button>
+            </aside>
+          </div>
+
+          <section class="panel matching-panel">
+            <div class="panel-header">
+              <div><div class="title-row"><h2>注目のマッチング候補</h2><span class="ai-pill">✦ AI SCORE</span></div><p>事業シナジーと投資テーマから算出した高適合ペア</p></div>
+              <button class="text-button" data-view-link="matching">マッチングを探索 <span>→</span></button>
+            </div>
+            <div class="match-grid" id="matchGrid"></div>
+          </section>
+
+          <footer class="page-footer"><span>FLUXIA Intelligence Platform</span><span>データソース: TDnet・EDINET・企業開示資料・独自リサーチ</span></footer>
+        </section>
+
+        <section class="page empty-view" id="secondaryView" hidden>
+          <div class="empty-icon">◇</div><p class="eyebrow">FLUXIA INTELLIGENCE</p><h1 id="secondaryTitle">企業データベース</h1>
+          <p>この機能はデモ画面ではプレビュー表示です。ダッシュボードから最新シグナルを確認できます。</p>
+          <button class="primary-button" data-view-link="dashboard">ダッシュボードへ戻る</button>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="screeningDialog">
+      <form method="dialog">
+        <div class="modal-head"><div><p class="eyebrow">NEW SCREENING</p><h2>スクリーニングを作成</h2></div><button value="cancel" aria-label="閉じる">×</button></div>
+        <label>対象市場<select><option>東証グロース</option><option>東証スタンダード</option><option>全市場</option></select></label>
+        <label>探索テーマ<select><option>資金需要</option><option>M&amp;A意向</option><option>事業シナジー</option></select></label>
+        <label>時価総額上限<div class="input-unit"><input type="number" value="100" /><span>億円</span></div></label>
+        <div class="modal-actions"><button value="cancel" class="secondary-button">キャンセル</button><button value="default" class="primary-button">スクリーニングを開始</button></div>
+      </form>
+    </dialog>
+    <dialog id="companyDetail" class="company-detail">
+      <form method="dialog"><button class="detail-close" aria-label="閉じる">×</button><div id="companyDetailContent"></div></form>
+    </dialog>
+    <div class="toast" id="toast" role="status"><span>✓</span><p><strong>データを更新しました</strong><small>すべてのシグナルは最新です</small></p></div>
+    <script src="app.js"></script>
+  </body>
+</html>
