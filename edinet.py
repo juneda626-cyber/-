@@ -45,10 +45,13 @@ def create_tables(path: Path = DB_PATH) -> None:
           id INTEGER PRIMARY KEY, doc_id TEXT NOT NULL, metric TEXT NOT NULL,
           value REAL NOT NULL, unit TEXT NOT NULL, period_start TEXT, period_end TEXT,
           context_id TEXT NOT NULL, scope TEXT NOT NULL, concept TEXT NOT NULL,
-          source_url TEXT NOT NULL, acquired_at TEXT NOT NULL,
+          source_url TEXT NOT NULL, acquired_at TEXT NOT NULL, source_page INTEGER,
           UNIQUE(doc_id, metric, context_id, concept),
           FOREIGN KEY(doc_id) REFERENCES edinet_filings(doc_id));
         """)
+        columns = {row[1] for row in db.execute("PRAGMA table_info(financial_observations)")}
+        if "source_page" not in columns:
+            db.execute("ALTER TABLE financial_observations ADD COLUMN source_page INTEGER")
 
 
 class EdinetClient:

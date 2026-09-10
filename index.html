@@ -59,6 +59,7 @@
           <div class="top-actions">
             <span class="data-status"><i></i>API CONNECTING</span>
             <button class="icon-button" aria-label="通知"><span>♧</span><i class="notification-dot"></i></button>
+            <button class="secondary-button" id="pdfUploadButton">PDF取込</button>
             <button class="primary-button" id="newScreening"><span>＋</span>スクリーニング</button>
           </div>
         </header>
@@ -149,6 +150,22 @@
     </dialog>
     <dialog id="companyDetail" class="company-detail">
       <form method="dialog"><button class="detail-close" aria-label="閉じる">×</button><div id="companyDetailContent"></div></form>
+    </dialog>
+    <dialog id="pdfDialog" class="pdf-dialog">
+      <form id="pdfUploadForm">
+        <div class="modal-head"><div><p class="eyebrow">EARNINGS PDF</p><h2>決算短信PDFを取り込む</h2></div><button type="button" class="pdf-close" aria-label="閉じる">×</button></div>
+        <div id="pdfSelectStep">
+          <p>文字を選択できるPDFに対応しています。画像だけのPDF・スキャンPDFは現在非対応です。</p>
+          <label>決算短信PDF<input id="pdfFile" name="pdf" type="file" accept="application/pdf,.pdf" required /></label>
+          <button class="primary-button" type="submit">候補値を抽出</button>
+        </div>
+        <div id="pdfConfirmStep" hidden>
+          <div class="review-warning"><strong>保存前に元PDFと照合してください</strong><p>抽出値は候補です。空欄を推測で埋めず、誤りがあれば修正してください。</p></div>
+          <div id="pdfCandidateFields"></div>
+          <div class="modal-actions"><button type="button" class="secondary-button" id="pdfBack">戻る</button><button type="button" class="primary-button" id="pdfConfirm">確認済みとして保存</button></div>
+        </div>
+        <p id="pdfStatus" role="status"></p>
+      </form>
     </dialog>
     <div class="toast" id="toast" role="status"><span>✓</span><p><strong>データを更新しました</strong><small>すべてのシグナルは最新です</small></p></div>
     <script src="app.js"></script>

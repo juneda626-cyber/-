@@ -7,6 +7,8 @@ import argparse
 import json
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
+from email import policy
+from email.parser import BytesParser
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -22,9 +24,17 @@ SEED = [
 ]
 
 
+class ClosingConnection(sqlite3.Connection):
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
 def connect(path: Path = DB_PATH) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path)
+    db = sqlite3.connect(path, factory=ClosingConnection)
     db.row_factory = sqlite3.Row
     return db
 
@@ -85,8 +95,9 @@ def _real_signals(path: Path = DB_PATH) -> list[dict]:
                            if current_pair and (pair["period_end"] or "") < (current_pair["period_end"] or "")]
             equity_ratio = current_pair["ratio"] if current_pair else None
             prior_equity_ratio = prior_pairs[0]["ratio"] if prior_pairs else None
+            direct_debt = latest("interest_debt")
             debt_parts = [latest(x) for x in ("short_term_loans", "current_long_term_loans", "long_term_loans", "bonds")]
-            debt = sum(x["value"] for x in debt_parts if x) if any(debt_parts) else None
+            debt = direct_debt["value"] if direct_debt else (sum(x["value"] for x in debt_parts if x) if any(debt_parts) else None)
             points, reasons, missing = 0, [], []
             if current_cf and not duration_months: missing.append("営業CFの対象期間")
             if runway is None: missing.append("現預金ランウェイ")
@@ -99,10 +110,11 @@ def _real_signals(path: Path = DB_PATH) -> list[dict]:
             status = "undetermined" if missing else ("high" if points >= 60 else "mid" if points >= 35 else "low")
             selected_pairs = [pair for pair in [current_pair, prior_pairs[0] if prior_pairs else None] if pair]
             ratio_rows = [row for pair in selected_pairs for row in (pair["equity"], pair["assets"])]
-            source_rows = [x for x in [cash, current_cf, prior_cf, *ratio_rows, *debt_parts] if x]
-            output.append({"code": filing["security_code"], "name": filing["company_name"], "market": "EDINET",
-              "business": "EDINET提出書類から取得", "filing_date": filing["period_end"], "doc_id": filing["doc_id"],
-              "data_kind": "actual", "analysis_status": status, "urgency": status, "score": None if missing else points,
+            source_rows = [x for x in [cash, current_cf, prior_cf, *ratio_rows, direct_debt, *debt_parts] if x]
+            is_pdf = filing["doc_type_code"] == "EARNINGS_PDF"
+            output.append({"code": filing["security_code"], "name": filing["company_name"], "market": "PDF取込" if is_pdf else "EDINET",
+              "business": "確認済み決算短信PDF" if is_pdf else "EDINET提出書類から取得", "filing_date": filing["period_end"], "doc_id": filing["doc_id"],
+              "data_kind": "verified_pdf" if is_pdf else "actual", "analysis_status": status, "urgency": status, "score": None if missing else points,
               "cash_million": round(cash["value"] / 1_000_000, 1) if cash else None,
               "operating_cf_million": round(current_cf["value"] / 1_000_000, 1) if current_cf else None,
               "runway_months": round(runway, 1) if runway is not None else None,
@@ -110,7 +122,7 @@ def _real_signals(path: Path = DB_PATH) -> list[dict]:
               "equity_ratio": round(equity_ratio, 1) if equity_ratio is not None else None,
               "interest_debt_million": round(debt / 1_000_000, 1) if debt is not None else None,
               "reasons": reasons, "missing": missing,
-              "sources": [{k: r[k] for k in ("metric", "value", "unit", "period_start", "period_end", "scope", "concept", "source_url", "acquired_at")} | {"doc_id": filing["doc_id"]} for r in source_rows]})
+              "sources": [{k: r[k] for k in ("metric", "value", "unit", "period_start", "period_end", "scope", "concept", "source_url", "acquired_at")} | {"doc_id": filing["doc_id"], "source_page": r["source_page"] if "source_page" in r.keys() else None} for r in source_rows]})
         return output
 
 
@@ -200,7 +212,7 @@ def signals(path: Path = DB_PATH, urgency: str | None = None, query: str = "") -
     if query:
         q = query.casefold()
         result = [item for item in result if q in (item["name"] + item["code"] + item["business"]).casefold()]
-    return sorted(result, key=lambda item: (item["data_kind"] != "actual", -(item["score"] or -1), item["runway_months"] or 9999))
+    return sorted(result, key=lambda item: (item["data_kind"] == "sample", -(item["score"] or -1), item["runway_months"] or 9999))
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -229,7 +241,48 @@ class Handler(SimpleHTTPRequestHandler):
             code = parsed.path.rsplit("/", 1)[-1]
             items = [item for item in signals() if item["code"] == code]
             return self.send_json(items[0] if items else {"error": "company not found"}, HTTPStatus.OK if items else HTTPStatus.NOT_FOUND)
+        if parsed.path.startswith("/api/uploads/") and parsed.path.endswith("/pdf"):
+            doc_id = parsed.path.split("/")[3]
+            with connect() as db:
+                exists = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='uploaded_documents'").fetchone()
+                row = db.execute("SELECT file_path FROM uploaded_documents WHERE doc_id=?", (doc_id,)).fetchone() if exists else None
+            if not row or not Path(row["file_path"]).is_file():
+                return self.send_json({"error": "PDF not found"}, HTTPStatus.NOT_FOUND)
+            data = Path(row["file_path"]).read_bytes()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/pdf")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers(); self.wfile.write(data); return
         return super().do_GET()
+
+    def do_POST(self) -> None:
+        from pdf_import import MAX_PDF_BYTES, extract_pdf, save_confirmed, stage_pdf
+        parsed = urlparse(self.path)
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length <= 0 or length > MAX_PDF_BYTES + 100_000:
+                raise ValueError("アップロードは20MB以下にしてください。")
+            body = self.rfile.read(length)
+            if parsed.path == "/api/pdf/extract":
+                content_type = self.headers.get("Content-Type", "")
+                if not content_type.startswith("multipart/form-data"):
+                    raise ValueError("multipart/form-dataでPDFを送信してください。")
+                message = BytesParser(policy=policy.default).parsebytes(
+                    f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode() + body)
+                part = next((item for item in message.iter_attachments() if item.get_param("name", header="content-disposition") == "pdf"), None)
+                if not part:
+                    raise ValueError("PDFファイルがありません。")
+                pdf = part.get_payload(decode=True)
+                token, path = stage_pdf(pdf)
+                candidates = extract_pdf(path)
+                return self.send_json({"token": token, "original_name": part.get_filename(), "candidates": candidates})
+            if parsed.path == "/api/pdf/confirm":
+                if not self.headers.get("Content-Type", "").startswith("application/json"):
+                    raise ValueError("application/jsonで確定値を送信してください。")
+                return self.send_json(save_confirmed(json.loads(body)))
+            return self.send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
+        except (ValueError, RuntimeError, json.JSONDecodeError) as error:
+            return self.send_json({"error": str(error)}, HTTPStatus.BAD_REQUEST)
 
     def send_json(self, payload: dict, status: HTTPStatus = HTTPStatus.OK) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode()
@@ -249,7 +302,10 @@ def main() -> None:
     if args.init_only:
         print(f"Initialized {DB_PATH}"); return
     print(f"FLUXIA MVP: http://localhost:{args.port} (sample data mode)")
-    ThreadingHTTPServer(("0.0.0.0", args.port), Handler).serve_forever()
+    try:
+        ThreadingHTTPServer(("0.0.0.0", args.port), Handler).serve_forever()
+    except KeyboardInterrupt:
+        print("\nFLUXIAを停止しました。")
 
 
 if __name__ == "__main__":
